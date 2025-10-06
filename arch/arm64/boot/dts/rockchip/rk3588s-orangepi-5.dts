@@ -21,6 +21,10 @@
 	};
 };
 
+&combphy0_ps {
+	status = "okay";
+};
+
 &pcie2x1l2 {
 	reset-gpios = <&gpio3 RK_PD1 GPIO_ACTIVE_HIGH>;
 	vpcie3v3-supply = <&vcc3v3_pcie20>;
