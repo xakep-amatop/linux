@@ -19,13 +19,11 @@ obj-y				+= suspend.o
 
 obj-$(CONFIG_XEN_PVHVM)		+= enlighten_hvm.o
 obj-$(CONFIG_XEN_PVHVM)		+= mmu_hvm.o
-obj-$(CONFIG_XEN_PVHVM)		+= suspend_hvm.o
 obj-$(CONFIG_XEN_PVHVM)		+= platform-pci-unplug.o
 
 obj-$(CONFIG_XEN_PV)		+= setup.o
 obj-$(CONFIG_XEN_PV)		+= apic.o
 obj-$(CONFIG_XEN_PV)		+= pmu.o
-obj-$(CONFIG_XEN_PV)		+= suspend_pv.o
 obj-$(CONFIG_XEN_PV)		+= p2m.o
 obj-$(CONFIG_XEN_PV)		+= enlighten_pv.o
 obj-$(CONFIG_XEN_PV)		+= mmu_pv.o

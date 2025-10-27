@@ -35,6 +35,7 @@
 #include <linux/pci.h>
 #include <linux/rcupdate.h>
 #include <linux/spinlock.h>
+#include <linux/syscore_ops.h>
 #include <linux/cpuhotplug.h>
 #include <linux/atomic.h>
 #include <linux/ktime.h>
@@ -2093,7 +2094,7 @@ int xen_test_irq_shared(int irq)
 }
 EXPORT_SYMBOL_GPL(xen_test_irq_shared);
 
-void xen_irq_resume(void)
+static void xen_irq_resume(void)
 {
 	unsigned int cpu;
 	struct irq_info *info;
@@ -2118,6 +2119,10 @@ void xen_irq_resume(void)
 
 	restore_pirqs();
 }
+
+static struct syscore_ops xen_events_syscore_ops = {
+	.resume  = xen_irq_resume,
+};
 
 static struct irq_chip xen_dynamic_chip __read_mostly = {
 	.name			= "xen-dyn",
@@ -2330,4 +2335,6 @@ void __init xen_init_IRQ(void)
 			pirq_needs_eoi = pirq_check_eoi_map;
 	}
 #endif
+
+	register_syscore_ops(&xen_events_syscore_ops);
 }

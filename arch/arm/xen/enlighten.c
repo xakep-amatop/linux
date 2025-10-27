@@ -432,6 +432,11 @@ static void __init xen_dt_guest_init(void)
 	xen_grant_frames = res.start;
 }
 
+static struct syscore_ops xen_suspend_syscore_ops = {
+	.suspend = xen_arch_suspend,
+	.resume = xen_arch_resume,
+};
+
 static int __init xen_guest_init(void)
 {
 	struct xen_add_to_physmap xatp;
@@ -524,9 +529,13 @@ static int __init xen_guest_init(void)
 	if (xen_initial_domain())
 		pvclock_gtod_register_notifier(&xen_pvclock_gtod_notifier);
 
-	return cpuhp_setup_state(CPUHP_AP_ARM_XEN_STARTING,
+	rc = cpuhp_setup_state(CPUHP_AP_ARM_XEN_STARTING,
 				 "arm/xen:starting", xen_starting_cpu,
 				 xen_dying_cpu);
+	if (rc)
+		return rc;
+
+	register_syscore_ops(&xen_suspend_syscore_ops);
 }
 early_initcall(xen_guest_init);
 
@@ -562,11 +571,9 @@ late_initcall(xen_late_init);
 
 
 /* empty stubs */
-void xen_arch_pre_suspend(void) { }
-void xen_arch_post_suspend(int suspend_cancelled) { }
 void xen_timer_resume(void) { }
 void xen_arch_resume(void) { }
-void xen_arch_suspend(void) { }
+int xen_arch_suspend(void) { return 0; }
 
 
 /* In the hypercall.S file. */

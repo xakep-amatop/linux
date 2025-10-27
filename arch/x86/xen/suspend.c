@@ -7,6 +7,7 @@
 #include <xen/interface/xen.h>
 #include <xen/grant_table.h>
 #include <xen/events.h>
+#include <xen/hvc-console.h>
 
 #include <asm/cpufeatures.h>
 #include <asm/msr-index.h>
@@ -18,24 +19,6 @@
 #include "xen-ops.h"
 
 static DEFINE_PER_CPU(u64, spec_ctrl);
-
-void xen_arch_pre_suspend(void)
-{
-	xen_save_time_memory_area();
-
-	if (xen_pv_domain())
-		xen_pv_pre_suspend();
-}
-
-void xen_arch_post_suspend(int cancelled)
-{
-	if (xen_pv_domain())
-		xen_pv_post_suspend(cancelled);
-	else
-		xen_hvm_post_suspend(cancelled);
-
-	xen_restore_time_memory_area();
-}
 
 static void xen_vcpu_notify_restore(void *data)
 {
@@ -62,9 +45,23 @@ static void xen_vcpu_notify_suspend(void *data)
 	}
 }
 
+static RAW_NOTIFIER_HEAD(xen_resume_notifier);
+
+void xen_resume_notifier_register(struct notifier_block *nb)
+{
+	raw_notifier_chain_register(&xen_resume_notifier, nb);
+}
+EXPORT_SYMBOL_GPL(xen_resume_notifier_register);
+
 void xen_arch_resume(void)
 {
 	int cpu;
+
+	/* Resume console as early as possible. */
+	//if (!si.cancelled)
+		xen_console_resume();
+
+	raw_notifier_call_chain(&xen_resume_notifier, 0, NULL);
 
 	on_each_cpu(xen_vcpu_notify_restore, NULL, 1);
 
@@ -72,7 +69,7 @@ void xen_arch_resume(void)
 		xen_pmu_init(cpu);
 }
 
-void xen_arch_suspend(void)
+int xen_arch_suspend(void)
 {
 	int cpu;
 
@@ -80,4 +77,6 @@ void xen_arch_suspend(void)
 		xen_pmu_finish(cpu);
 
 	on_each_cpu(xen_vcpu_notify_suspend, NULL, 1);
+
+	return 0;
 }

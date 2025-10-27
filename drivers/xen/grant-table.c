@@ -49,6 +49,7 @@
 #ifdef CONFIG_XEN_GRANT_DMA_ALLOC
 #include <linux/dma-mapping.h>
 #endif
+#include <linux/syscore_ops.h>
 
 #include <xen/xen.h>
 #include <xen/interface/xen.h>
@@ -1580,18 +1581,33 @@ static int gnttab_setup(void)
 	return gnttab_map(0, nr_grant_frames - 1);
 }
 
-int gnttab_resume(void)
+static void gnttab_resume(void)
 {
 	gnttab_request_version();
-	return gnttab_setup();
+	if (gnttab_setup() < 0) {
+		int i = gnttab_frames(nr_grant_frames, RPP);
+		for (i--; i >= 0; i--)
+			free_page((unsigned long)gnttab_list[i]);
+
+		kfree(gnttab_list);
+		bitmap_free(gnttab_free_bitmap);
+
+		printk("Grant table resume failed\n");
+	}
 }
 
-int gnttab_suspend(void)
+static int gnttab_suspend(void)
 {
 	if (xen_pv_domain())
 		gnttab_interface->unmap_frames();
+
 	return 0;
 }
+
+static struct syscore_ops gnttab_syscore_ops = {
+	.suspend = gnttab_suspend,
+	.resume  = gnttab_resume,
+};
 
 static int gnttab_expand(unsigned int req_entries)
 {
@@ -1670,6 +1686,8 @@ int gnttab_init(void)
 
 	gnttab_set_free(GNTTAB_NR_RESERVED_ENTRIES,
 			gnttab_size - GNTTAB_NR_RESERVED_ENTRIES);
+
+	register_syscore_ops(&gnttab_syscore_ops);
 
 	printk("Grant table initialized\n");
 	return 0;

@@ -84,8 +84,6 @@ struct gntab_unmap_queue_data
 };
 
 int gnttab_init(void);
-int gnttab_suspend(void);
-int gnttab_resume(void);
 
 int gnttab_grant_foreign_access(domid_t domid, unsigned long frame,
 				int readonly);

@@ -45,127 +45,26 @@ struct suspend_info {
 	int cancelled;
 };
 
-static RAW_NOTIFIER_HEAD(xen_resume_notifier);
-
-void xen_resume_notifier_register(struct notifier_block *nb)
-{
-	raw_notifier_chain_register(&xen_resume_notifier, nb);
-}
-EXPORT_SYMBOL_GPL(xen_resume_notifier_register);
-
 #ifdef CONFIG_HIBERNATE_CALLBACKS
-static int xen_suspend(void *data)
+#ifdef CONFIG_X86_64
+static int xen_suspend(suspend_state_t state)
 {
-	struct suspend_info *si = data;
-	int err;
-
-	BUG_ON(!irqs_disabled());
-
-	err = syscore_suspend();
-	if (err) {
-		pr_err("%s: system core suspend failed: %d\n", __func__, err);
-		return err;
-	}
-
-	gnttab_suspend();
-	xen_manage_runstate_time(-1);
-	xen_arch_pre_suspend();
-
-	si->cancelled = HYPERVISOR_suspend(xen_pv_domain()
-                                           ? virt_to_gfn(xen_start_info)
-                                           : 0);
-
-	xen_arch_post_suspend(si->cancelled);
-	xen_manage_runstate_time(si->cancelled ? 1 : 0);
-	gnttab_resume();
-
-	if (!si->cancelled) {
-		xen_irq_resume();
-		xen_timer_resume();
-	}
-
-	syscore_resume();
-
-	return 0;
+	return HYPERVISOR_suspend(xen_pv_domain() ? virt_to_gfn(xen_start_info) : 0);
 }
+
+static const struct platform_suspend_ops xen_x86_suspend_ops = {
+	.valid          = suspend_valid_only_mem,
+	.enter          = xen_suspend,
+};
+#endif	/* CONFIG_X86_64 */
 
 static void do_suspend(void)
 {
-	int err;
-	struct suspend_info si;
-
-	shutting_down = SHUTDOWN_SUSPEND;
-
-	if (!mutex_trylock(&system_transition_mutex))
-	{
-		pr_err("%s: failed to take system_transition_mutex\n", __func__);
-		goto out;
-	}
-
-	err = freeze_processes();
-	if (err) {
-		pr_err("%s: freeze processes failed %d\n", __func__, err);
-		goto out_unlock;
-	}
-
-	err = freeze_kernel_threads();
-	if (err) {
-		pr_err("%s: freeze kernel threads failed %d\n", __func__, err);
-		goto out_thaw;
-	}
-
-	err = dpm_suspend_start(PMSG_FREEZE);
-	if (err) {
-		pr_err("%s: dpm_suspend_start %d\n", __func__, err);
-		goto out_resume_end;
-	}
-
-	printk(KERN_DEBUG "suspending xenstore...\n");
-	xs_suspend();
-
-	err = dpm_suspend_end(PMSG_FREEZE);
-	if (err) {
-		pr_err("dpm_suspend_end failed: %d\n", err);
-		si.cancelled = 0;
-		goto out_resume;
-	}
-
-	xen_arch_suspend();
-
-	si.cancelled = 1;
-
-	err = stop_machine(xen_suspend, &si, cpumask_of(0));
-
-	/* Resume console as early as possible. */
-	if (!si.cancelled)
-		xen_console_resume();
-
-	raw_notifier_call_chain(&xen_resume_notifier, 0, NULL);
-
-	xen_arch_resume();
-
-	dpm_resume_start(si.cancelled ? PMSG_THAW : PMSG_RESTORE);
-
-	if (err) {
-		pr_err("failed to start xen_suspend: %d\n", err);
-		si.cancelled = 1;
-	}
-
-out_resume:
-	if (!si.cancelled)
-		xs_resume();
-	else
-		xs_suspend_cancel();
-
-out_resume_end:
-	dpm_resume_end(si.cancelled ? PMSG_THAW : PMSG_RESTORE);
-
-out_thaw:
-	thaw_processes();
-out_unlock:
-	mutex_unlock(&system_transition_mutex);
-out:
-	shutting_down = SHUTDOWN_INVALID;
+#ifdef CONFIG_X86_64
+	suspend_set_ops(&xen_x86_suspend_ops);
+#endif
+	pm_suspend(PM_SUSPEND_MEM);
+	return;
 }
 #endif	/* CONFIG_HIBERNATE_CALLBACKS */
 

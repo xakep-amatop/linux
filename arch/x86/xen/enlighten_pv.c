@@ -34,6 +34,7 @@
 #include <linux/reboot.h>
 #include <linux/virtio_anchor.h>
 #include <linux/stackprotector.h>
+#include <linux/syscore_ops.h>
 
 #include <xen/xen.h>
 #include <xen/events.h>
@@ -215,6 +216,60 @@ static void __init xen_set_mtrr_data(void)
 #endif
 }
 
+static int xen_pv_pre_suspend(void)
+{
+	int rc = xen_arch_suspend();
+
+	if (rc < 0)
+		return rc;
+
+	xen_mm_pin_all();
+
+	xen_start_info->store_mfn = mfn_to_pfn(xen_start_info->store_mfn);
+	xen_start_info->console.domU.mfn =
+		mfn_to_pfn(xen_start_info->console.domU.mfn);
+
+	BUG_ON(!irqs_disabled());
+
+	HYPERVISOR_shared_info = &xen_dummy_shared_info;
+	if (HYPERVISOR_update_va_mapping(fix_to_virt(FIX_PARAVIRT_BOOTMAP),
+					 __pte_ma(0), 0))
+		BUG();
+
+	return 0;
+}
+
+static void xen_pv_post_suspend(void)
+{
+	int suspend_cancelled = 0;
+
+	xen_build_mfn_list_list();
+	set_fixmap(FIX_PARAVIRT_BOOTMAP, xen_start_info->shared_info);
+	HYPERVISOR_shared_info = (void *)fix_to_virt(FIX_PARAVIRT_BOOTMAP);
+	xen_setup_mfn_list_list();
+
+	if (suspend_cancelled) {
+		xen_start_info->store_mfn =
+			pfn_to_mfn(xen_start_info->store_mfn);
+		xen_start_info->console.domU.mfn =
+			pfn_to_mfn(xen_start_info->console.domU.mfn);
+	} else {
+#ifdef CONFIG_SMP
+		BUG_ON(xen_cpu_initialized_map == NULL);
+		cpumask_copy(xen_cpu_initialized_map, cpu_online_mask);
+#endif
+		xen_vcpu_restore();
+	}
+
+	xen_mm_unpin_all();
+	xen_arch_resume();
+}
+
+static struct syscore_ops xen_pv_syscore_ops = {
+	.suspend = xen_pv_pre_suspend,
+	.resume = xen_pv_post_suspend,
+};
+
 static void __init xen_pv_init_platform(void)
 {
 	/* PV guests can't operate virtio devices without grants. */
@@ -239,6 +294,8 @@ static void __init xen_pv_init_platform(void)
 
 	/* Adjust nr_cpu_ids before "enumeration" happens */
 	xen_smp_count_cpus();
+
+	register_syscore_ops(&xen_pv_syscore_ops);
 }
 
 static void __init xen_pv_guest_late_init(void)

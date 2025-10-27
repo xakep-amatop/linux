@@ -21,12 +21,9 @@ static inline uint32_t xen_vcpu_nr(int cpu)
 
 #define XEN_VCPU_ID_INVALID U32_MAX
 
-void xen_arch_pre_suspend(void);
-void xen_arch_post_suspend(int suspend_cancelled);
-
 void xen_timer_resume(void);
 void xen_arch_resume(void);
-void xen_arch_suspend(void);
+int xen_arch_suspend(void);
 
 void xen_reboot(int reason);
 
@@ -35,7 +32,6 @@ void xen_resume_notifier_register(struct notifier_block *nb);
 bool xen_vcpu_stolen(int vcpu);
 void xen_setup_runstate_info(int cpu);
 void xen_time_setup_guest(void);
-void xen_manage_runstate_time(int action);
 u64 xen_steal_clock(int cpu);
 
 int xen_setup_shutdown_event(void);

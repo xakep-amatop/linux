@@ -8,6 +8,7 @@
 #include <linux/gfp.h>
 #include <linux/slab.h>
 #include <linux/static_call.h>
+#include <linux/syscore_ops.h>
 
 #include <asm/paravirt.h>
 #include <asm/xen/hypervisor.h>
@@ -82,7 +83,7 @@ static void xen_get_runstate_snapshot_cpu(struct vcpu_runstate_info *res,
 		res->time[i] += per_cpu(old_runstate_time, cpu)[i];
 }
 
-void xen_manage_runstate_time(int action)
+static void xen_manage_runstate_time(int action)
 {
 	static struct vcpu_runstate_info *runstate_delta;
 	struct vcpu_runstate_info state;
@@ -161,6 +162,24 @@ void xen_setup_runstate_info(int cpu)
 		BUG();
 }
 
+static int xen_time_suspend(void)
+{
+	xen_manage_runstate_time(-1);
+	return 0;
+}
+
+static void xen_time_resume(void)
+{
+	/* TODO: don't restore xenstate in case of Hypervisor call fails */
+	xen_manage_runstate_time(0);
+	xen_timer_resume();
+}
+
+static struct syscore_ops xen_time_syscore_ops = {
+	.suspend = xen_time_suspend,
+	.resume  = xen_time_resume,
+};
+
 void __init xen_time_setup_guest(void)
 {
 	bool xen_runstate_remote;
@@ -173,4 +192,6 @@ void __init xen_time_setup_guest(void)
 	static_key_slow_inc(&paravirt_steal_enabled);
 	if (xen_runstate_remote)
 		static_key_slow_inc(&paravirt_steal_rq_enabled);
+
+	register_syscore_ops(&xen_time_syscore_ops);
 }

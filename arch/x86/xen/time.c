@@ -14,6 +14,7 @@
 #include <linux/clockchips.h>
 #include <linux/gfp.h>
 #include <linux/slab.h>
+#include <linux/syscore_ops.h>
 #include <linux/pvclock_gtod.h>
 #include <linux/timekeeper_internal.h>
 
@@ -390,7 +391,7 @@ void xen_timer_resume(void)
 static struct pvclock_vsyscall_time_info *xen_clock __read_mostly;
 static u64 xen_clock_value_saved;
 
-void xen_save_time_memory_area(void)
+static int xen_save_time_memory_area(void)
 {
 	struct vcpu_register_time_memory_area t;
 	int ret;
@@ -398,7 +399,7 @@ void xen_save_time_memory_area(void)
 	xen_clock_value_saved = xen_clocksource_read() - xen_sched_clock_offset;
 
 	if (!xen_clock)
-		return;
+		return 0;
 
 	t.addr.v = NULL;
 
@@ -408,9 +409,11 @@ void xen_save_time_memory_area(void)
 			  ret);
 	else
 		clear_page(xen_clock);
+	
+	return ret;
 }
 
-void xen_restore_time_memory_area(void)
+static void xen_restore_time_memory_area(void)
 {
 	struct vcpu_register_time_memory_area t;
 	int ret;
@@ -440,6 +443,11 @@ out:
 	pvclock_resume();
 	xen_sched_clock_offset = xen_clocksource_read() - xen_clock_value_saved;
 }
+
+static struct syscore_ops xen_time_syscore_ops = {
+	.suspend = xen_save_time_memory_area,
+	.resume  = xen_restore_time_memory_area,
+};
 
 static void xen_setup_vsyscall_time_info(void)
 {
@@ -568,6 +576,8 @@ static void __init xen_init_time_common(void)
 
 	x86_platform.calibrate_tsc = xen_tsc_khz;
 	x86_platform.get_wallclock = xen_get_wallclock;
+
+	register_syscore_ops(&xen_time_syscore_ops);
 }
 
 void __init xen_init_time_ops(void)

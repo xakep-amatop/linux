@@ -45,6 +45,7 @@
 #include <linux/kthread.h>
 #include <linux/reboot.h>
 #include <linux/rwsem.h>
+#include <linux/syscore_ops.h>
 #include <linux/mutex.h>
 #include <asm/xen/hypervisor.h>
 #include <xen/xenbus.h>
@@ -838,6 +839,17 @@ void xs_resume(void)
 	up_write(&xs_watch_rwsem);
 }
 
+static int xs_suspend_helper(void)
+{
+	xs_suspend();
+	return 0;
+}
+
+static struct syscore_ops xs_suspend_syscore_ops = {
+	.suspend = xs_suspend_helper,
+	.resume  = xs_resume,
+};
+
 void xs_suspend_cancel(void)
 {
 	up_write(&xs_watch_rwsem);
@@ -925,6 +937,6 @@ int xs_init(void)
 
 	/* shutdown watches for kexec boot */
 	xs_reset_watches();
-
+	register_syscore_ops(&xs_suspend_syscore_ops);
 	return 0;
 }

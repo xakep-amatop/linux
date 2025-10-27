@@ -4,6 +4,7 @@
 #include <linux/cpu.h>
 #include <linux/kexec.h>
 #include <linux/memblock.h>
+#include <linux/syscore_ops.h>
 #include <linux/virtio_anchor.h>
 
 #include <xen/features.h>
@@ -149,6 +150,37 @@ static void xen_hvm_crash_shutdown(struct pt_regs *regs)
 }
 #endif
 
+static int xen_hvm_post_suspend(void)
+{
+	int rc, suspend_cancelled =0;
+
+	rc = xen_arch_suspend();
+	if (rc < 0)
+		return rc;
+
+	if (!suspend_cancelled) {
+		xen_hvm_init_shared_info();
+		xen_vcpu_restore();
+	}
+
+	if (xen_percpu_upcall) {
+		unsigned int cpu;
+
+		for_each_online_cpu(cpu)
+			BUG_ON(xen_set_upcall_vector(cpu));
+	} else {
+		xen_setup_callback_vector();
+	}
+
+	xen_unplug_emulated_devices();
+	return 0;
+}
+
+static struct syscore_ops hvm_syscore_ops = {
+	.suspend = xen_hvm_post_suspend,
+	.resume = xen_arch_resume,
+};
+
 static int xen_cpu_up_prepare_hvm(unsigned int cpu)
 {
 	int rc = 0;
@@ -233,6 +265,7 @@ static void __init xen_hvm_guest_init(void)
 #ifdef CONFIG_CRASH_DUMP
 	machine_ops.crash_shutdown = xen_hvm_crash_shutdown;
 #endif
+	register_syscore_ops(&hvm_syscore_ops);
 }
 
 static __init int xen_parse_nopv(char *arg)
